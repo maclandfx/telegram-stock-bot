@@ -1,22 +1,36 @@
+const http = require("http");
 const TG_TOKEN = "8612305607:AAEMzv4tQkVX390KdXABqgW5047X-bVnspM";
 const USER_ID = 8673372605;
 
 async function httpPost(url, body) {
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(url);
+    const options = {
+      hostname: urlObj.hostname,
+      path: urlObj.pathname,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    };
+    const req = http.request(options, (res) => {
+      let data = "";
+      res.on("data", (chunk) => (data += chunk));
+      res.on("end", () => {
+        try {
+          resolve(JSON.parse(data));
+        } catch {
+          resolve({ ok: false });
+        }
+      });
+    });
+    req.on("error", reject);
+    req.write(JSON.stringify(body));
+    req.end();
   });
-  return await resp.json();
 }
 
 async function sendMessage(text) {
   const url = `https://api.telegram.org/bot${TG_TOKEN}/sendMessage`;
-  return await httpPost(url, {
-    chat_id: USER_ID,
-    parse_mode: "HTML",
-    text,
-  });
+  return await httpPost(url, { chat_id: USER_ID, parse_mode: "HTML", text });
 }
 
 async function checkSignals() {
@@ -31,7 +45,10 @@ async function checkSignals() {
       turnover = (rawTurn / 100000000).toFixed(2) + "万亿";
     } catch (e) {}
 
-    let shChange = 0, shPrice = 0, szChange = 0, cybChange = 0;
+    let shChange = 0,
+      shPrice = 0,
+      szChange = 0,
+      cybChange = 0;
     try {
       const mkt = await fetch(
         "https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&invt=2&fields=f2,f3,f4,f14&secids=1.000001,0.399001,0.399006"
@@ -98,21 +115,44 @@ async function handleCommand(text) {
 
 💡 每个交易日下午会自动推送一次信号巡检结果`;
   }
-  return `📝 收到: <code>${text}</code>\n\n发送 <code>帮助</code> 查看可用指令`;
+  return `📝 收到: <code>${text}</code>
+
+发送 <code>帮助</code> 查看可用指令`;
 }
 
-module.exports = async (req, res) => {
-  if (req.method === "POST") {
-    try {
-      const body = req.body;
-      const message = body.message || body.edited_message;
-      if (message && message.text) {
-        const reply = await handleCommand(message.text);
-        await sendMessage(reply);
-      }
-    } catch (e) {
-      console.error(e);
+async function handleWebhook(req, res) {
+  try {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    if (req.method === "POST" && url.pathname === "/webhook") {
+      let body = "";
+      req.on("data", (chunk) => (body += chunk));
+      req.on("end", async () => {
+        try {
+          const data = JSON.parse(body);
+          const message = data.message || data.edited_message;
+          if (message && message.text) {
+            const reply = await handleCommand(message.text);
+            await sendMessage(reply);
+          }
+        } catch (e) {
+          console.error("处理消息失败:", e);
+        }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      });
+    } else {
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end("OK");
     }
+  } catch (e) {
+    console.error(e);
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("OK");
   }
-  res.status(200).send("ok");
-};
+}
+
+const server = http.createServer(handleWebhook);
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`本子虾 Bot 运行中，端口 ${PORT}`);
+});
