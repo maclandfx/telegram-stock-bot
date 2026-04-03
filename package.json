@@ -1,0 +1,13 @@
+{
+  "name": "telegram-stock-bot",
+  "version": "1.0.0",
+  "description": "本子虾 Telegram Bot - A股信号巡检",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": "18.x"
+  },
+  "dependencies": {}
+}
